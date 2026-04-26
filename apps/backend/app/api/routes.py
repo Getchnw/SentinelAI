@@ -1,0 +1,66 @@
+import time
+from fastapi import APIRouter, HTTPException
+
+from app.models import Finding, ScanFixRequest, ScanFixResponse, ServiceError
+from app.services.llm_client import generate_fix
+from app.services.sanitizer import sanitize_code, desanitize_code
+from app.services.semgrep_runner import run_semgrep
+
+router = APIRouter(prefix="/v1", tags=["scan-fix"])
+
+
+@router.get("/health")
+def health() -> dict:
+    return {"status": "ok"}
+
+
+@router.post("/scan-fix", response_model=ScanFixResponse)
+async def scan_fix(payload: ScanFixRequest) -> ScanFixResponse:
+    semgrep_start = time.perf_counter()
+    llm_start = 0.0
+
+    try:
+        sanitized = sanitize_code(payload.code_snippet)
+        semgrep_results = run_semgrep(sanitized.sanitized_code, payload.language)
+        semgrep_ms = int((time.perf_counter() - semgrep_start) * 1000)
+
+        llm_start = time.perf_counter()
+        fixed_sanitized, explanation = await generate_fix(
+            sanitized.sanitized_code,
+            semgrep_results,
+            payload.user_instruction,
+        )
+        llm_ms = int((time.perf_counter() - llm_start) * 1000)
+
+        fixed_code = desanitize_code(fixed_sanitized, sanitized.token_map)
+        findings = [
+            Finding(
+                rule_id=item.get("check_id", "unknown"),
+                severity=item.get("extra", {}).get("severity", "warning").lower(),
+                message=item.get("extra", {}).get("message", "Potential issue"),
+                start_line=item.get("start", {}).get("line", 1),
+                end_line=item.get("end", {}).get("line", 1),
+            )
+            for item in semgrep_results
+        ]
+
+        return ScanFixResponse(
+            request_id=payload.request_id,
+            status="ok",
+            findings=findings,
+            fixed_code=fixed_code,
+            explanation=explanation,
+            timings_ms={"semgrep": semgrep_ms, "llm": llm_ms},
+            errors=[],
+        )
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=ServiceError(source="validation", code="INVALID_INPUT", detail=str(exc)).model_dump(),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=ServiceError(source="system", code="PROCESSING_FAILED", detail=str(exc)).model_dump(),
+        ) from exc

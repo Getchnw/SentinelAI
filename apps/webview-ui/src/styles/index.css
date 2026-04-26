@@ -1,0 +1,63 @@
+:root {
+  --bg-start: #0f172a;
+  --bg-end: #1e293b;
+  --panel: #0b1220cc;
+  --text: #e5e7eb;
+  --muted: #94a3b8;
+  --accent: #22c55e;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  background: radial-gradient(circle at top, var(--bg-end), var(--bg-start));
+  color: var(--text);
+}
+
+.shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 16px;
+  padding: 16px;
+}
+
+header p {
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.chat-box {
+  background: var(--panel);
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.bubble {
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.bubble.user {
+  background: #1d4ed8;
+}
+
+.bubble.ai {
+  background: #0f766e;
+}
+
+button {
+  background: var(--accent);
+  color: #052e16;
+  border: none;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
