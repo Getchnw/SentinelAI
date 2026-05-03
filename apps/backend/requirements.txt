@@ -1,8 +1,19 @@
+# --- Core Framework ---
 fastapi==0.115.0
 uvicorn==0.46.0
-pydantic==2.9.2
-httpx==0.27.2
-starlette==0.38.6
-semgrep==1.161.0
-fastapi==0.136.1
-httpx==0.28.1
+pydantic>=2.11.0
+pydantic-settings==2.5.2   # สำหรับจัดการ Config
+python-dotenv==1.0.1       # สำหรับอ่านไฟล์ .env
+
+# --- AI & LLM Integration (Multi-Provider) ---
+litellm==1.34.0            # ตัวจัดการ Multi-Provider (ครอบจักรวาล)
+httpx==0.28.1              # HTTP client สำหรับ Async Request
+openai==1.49.0             # SDK พื้นฐานที่ litellm อาจเรียกใช้เบื้องหลัง
+
+# --- Security Tools ---
+semgrep==1.161.0           # เครื่องมือสแกนช่องโหว่
+detect-secrets==1.5.0    # เครื่องมือสแกนหาคีย์ลับในโค้ด
+
+# --- Testing (สำหรับ Development) ---
+pytest==8.3.3
+pytest-asyncio==0.24.0
