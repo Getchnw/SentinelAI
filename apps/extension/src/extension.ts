@@ -1,7 +1,16 @@
 import * as vscode from "vscode";
 import { scanAndFix } from "./core/backendClient";
-import { updateDiagnostics, diagnosticCollection } from "./providers/diagnosticProvider";
-import { SentinelCodeActionProvider, setFixedCode } from "./providers/codeActionProvider";
+import {
+  clearDiagnostics,
+  diagnosticCollection,
+  updateDiagnostics,
+} from "./providers/diagnosticProvider";
+import {
+  SentinelCodeActionProvider,
+  applyLatestFix,
+  clearScanResult,
+  setScanResult,
+} from "./providers/codeActionProvider";
 import { showResultPanel } from "./webview/panel";
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -23,17 +32,36 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
 
-      const selected = editor.selection.isEmpty
-        ? editor.document.getText()
-        : editor.document.getText(editor.selection);
+      const selectionRange = editor.selection.isEmpty
+        ? new vscode.Range(
+            new vscode.Position(0, 0),
+            editor.document.lineAt(editor.document.lineCount - 1).range.end
+          )
+        : new vscode.Range(editor.selection.start, editor.selection.end);
+      const selected = editor.document.getText(selectionRange);
 
       try {
-        const result = await scanAndFix(editor.document, selected);
-        updateDiagnostics(editor.document, result.findings);
-        setFixedCode(result.fixed_code);
-        showResultPanel(result.explanation);
+        const result = await scanAndFix(editor.document, selected, {
+          retries: 1,
+          timeoutMs: 30_000,
+        });
+
+        updateDiagnostics(editor.document, result.findings, selectionRange.start.line);
+        setScanResult(editor.document, selectionRange, result);
+        showResultPanel(context, result, {
+          onApplyFix: async () => {
+            const applied = await applyLatestFix(editor.document.uri);
+            if (!applied) {
+              vscode.window.showWarningMessage(
+                "SentinelAI fix is not available for the current document."
+              );
+            }
+          },
+        });
         vscode.window.showInformationMessage("SentinelAI scan complete.");
       } catch (error) {
+        clearDiagnostics(editor.document);
+        clearScanResult(editor.document.uri);
         vscode.window.showErrorMessage(`SentinelAI failed: ${String(error)}`);
       }
     })

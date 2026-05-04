@@ -1,17 +1,62 @@
 import * as vscode from "vscode";
+import type { ScanFixResponse } from "../core/backendClient";
 
-let fixedCodeCache = "";
+type ScanState = {
+  selectionRange: vscode.Range;
+  response: ScanFixResponse;
+};
 
-export function setFixedCode(code: string): void {
-  fixedCodeCache = code;
+const scanStateByDocument = new Map<string, ScanState>();
+
+export function setScanResult(
+  document: vscode.TextDocument,
+  selectionRange: vscode.Range,
+  response: ScanFixResponse
+): void {
+  scanStateByDocument.set(document.uri.toString(), {
+    selectionRange,
+    response,
+  });
+}
+
+export function clearScanResult(documentUri: vscode.Uri): void {
+  scanStateByDocument.delete(documentUri.toString());
+}
+
+export async function applyLatestFix(
+  documentUri?: vscode.Uri
+): Promise<boolean> {
+  const editor = vscode.window.activeTextEditor;
+
+  if (!editor && !documentUri) {
+    return false;
+  }
+
+  const targetUri = documentUri ?? editor!.document.uri;
+  const state = scanStateByDocument.get(targetUri.toString());
+
+  if (!state) {
+    return false;
+  }
+
+  const workspaceEdit = new vscode.WorkspaceEdit();
+  workspaceEdit.replace(targetUri, state.selectionRange, state.response.fixed_code);
+  return vscode.workspace.applyEdit(workspaceEdit);
 }
 
 export class SentinelCodeActionProvider implements vscode.CodeActionProvider {
   provideCodeActions(
     document: vscode.TextDocument,
-    _range: vscode.Range
+    range: vscode.Range,
+    context: vscode.CodeActionContext
   ): vscode.CodeAction[] {
-    if (!fixedCodeCache) {
+    const state = scanStateByDocument.get(document.uri.toString());
+
+    if (!state) {
+      return [];
+    }
+
+    if (range.intersection(state.selectionRange) === undefined && context.diagnostics.length === 0) {
       return [];
     }
 
@@ -21,11 +66,8 @@ export class SentinelCodeActionProvider implements vscode.CodeActionProvider {
     );
 
     action.edit = new vscode.WorkspaceEdit();
-    const fullRange = new vscode.Range(
-      new vscode.Position(0, 0),
-      document.lineAt(document.lineCount - 1).range.end
-    );
-    action.edit.replace(document.uri, fullRange, fixedCodeCache);
+    action.edit.replace(document.uri, state.selectionRange, state.response.fixed_code);
+    action.isPreferred = true;
 
     return [action];
   }
