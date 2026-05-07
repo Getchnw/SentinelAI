@@ -36,7 +36,7 @@ In the era of AI-assisted coding, developers face two major challenges:
 ### Prerequisites
 - Python 3.11+
 - Node.js 20+
-- Ollama running locally on http://localhost:11434 (or switch AI endpoint to OpenAI API)
+- Ollama running locally with qwen2.5-coder:7b model (or other model)
 - VS Code 1.95+
 
 ### 1. Start Backend API (FastAPI)
@@ -86,37 +86,79 @@ If F5 opens a JSON debug prompt, use the root workspace debug profile at [.vscod
 2. Confirm findings are detected at correct lines
 3. Confirm fixed code removes vulnerability without breaking behavior
 
-### 5. API Smoke Test
-Run this after backend is up:
+### 5. API Test Suite
+Run this after backend is up (in another terminal):
 
-```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/health" -Method Get
+```bash
+cd apps/backend
+python test_api.py
 ```
 
-Minimal scan request:
+**Expected output:**
+- Health check test
+- Empty code validation test  
+- Unsupported language error test
+- Code size limit test
+- Secure code scan (no vulnerabilities)
+- Valid Python scan (SQL injection + hardcoded credentials)
+- JavaScript code scan (XSS vulnerabilities)
+- Test summary with [PASS]/[FAIL] status
 
-```powershell
-$payload = @{
-  request_id = "smoke-1"
-  language = "python"
-  file_path = "qa/testcases/owasp-top10/sqli_python.py"
-  code_snippet = "def f(conn, user_input):`n    query = \"SELECT * FROM users WHERE username = '\" + user_input + \"'\"`n    return conn.execute(query)"
-} | ConvertTo-Json
-
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/scan-fix" -Method Post -ContentType "application/json" -Body $payload
-```
-
-If /scan-fix returns LLM connection error, start Ollama first:
-
-```powershell
+### 6. Start Ollama (if not already running)
+```bash
+# Install Ollama from https://ollama.ai
+# Then start Ollama service
 ollama serve
+
+# In another terminal, pull the default model
+ollama pull qwen2.5-coder:7b
+
+# Or use other models
+ollama pull llama3.1
+ollama pull mistral
+ollama pull neural-chat
+```
+
+### 7. Quick Health Check
+```bash
+curl http://localhost:8000/v1/health
+```
+
+### 8. Manual Scan Test (Python with SQL Injection)
+```bash
+curl -X POST http://localhost:8000/v1/scan-fix \
+  -H "Content-Type: application/json" \
+  -d '{
+    "request_id": "test-1",
+    "language": "python",
+    "file_path": "test.py",
+    "code_snippet": "x = input()\nquery = f\"SELECT * FROM users WHERE id={x}\""
+  }'
+```
+
+### 9. Configuration (Optional)
+Default uses `ollama/qwen2.5-coder:7b`. To use a different model:
+
+```bash
+# Set the Ollama model
+export LLM_MODEL=ollama/llama3.1
+# or
+export LLM_MODEL=ollama/mistral
+# or
+export LLM_MODEL=ollama/neural-chat
+
+# Ollama URL (default: http://localhost:11434)
+export OLLAMA_URL=http://localhost:11434
 ```
 
 ## Troubleshooting
 
 - If SentinelAI: Scan and Suggest Fix does not appear, make sure the Extension Development Host was launched from the root workspace and the SentinelAI extension is built in apps/extension.
 - If F5 opens JSON debugging instead of the extension, close that prompt and use the Run SentinelAI Extension profile from the root [.vscode/launch.json](.vscode/launch.json).
-- If /scan-fix returns 500 with All connection attempts failed, start Ollama or switch the AI endpoint before testing again.
+- If test_api.py fails with connection error, verify backend is running on http://localhost:8000
+- If /scan-fix returns 500 with Ollama connection error, verify Ollama is running: `ollama serve`
+- For semgrep errors, ensure semgrep is installed: `pip install semgrep`
+- To check available Ollama models: `ollama list`
 
 ## Project Structure
 - apps/backend: FastAPI gateway, sanitization, Semgrep, AI orchestration
