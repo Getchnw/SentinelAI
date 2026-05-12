@@ -32,12 +32,12 @@ export function showResultPanel(
   // ถอยออกจาก apps/extension ไปที่ apps/ แล้วเข้า webview-ui/dist
   const distPath = vscode.Uri.joinPath(context.extensionUri, "..", "webview-ui", "dist");
 
-  // ดึงไฟล์ Assets ตามชื่อที่คุณผิงแคปมา (เช็คตัวเล็กใหญ่และตัวเลขให้ดีนะครับ)
   const scriptUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(distPath, "assets", "index-DoDP0QKd.js")
+    vscode.Uri.joinPath(distPath, "assets", "index-DSaVJ5CX.js")
   );
+
   const styleUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(distPath, "assets", "index-DqxwHZFp.css")
+    vscode.Uri.joinPath(distPath, "assets", "index-Cbi_nJcS.css")
   );
 
   webview.html = `

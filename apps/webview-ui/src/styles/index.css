@@ -1,52 +1,39 @@
-/* 1. ปลุกพลัง Tailwind */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* 2. ตั้งค่าพื้นฐาน (Global Reset) */
 :root {
-  color-scheme: dark; /* บอกเบราว์เซอร์ว่าเป็นโหมดมืด */
-}
-
-html, body, #root {
-  height: 100%;
-  margin: 0;
-  padding: 0;
-  overflow: hidden; /* กันขอบขาวและสกอลล์ซ้ำซ้อน */
-  background-color: #0f1115; /* สีพื้นหลังเดียวกับใน React */
+  color-scheme: dark;
 }
 
 body {
-  font-family: 'Urbanist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  margin: 0;
+  padding: 0;
+  background-color: #0f1115;
+  color: #94a3b8;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  overflow: hidden; /* ป้องกัน scroll ซ้อนกัน */
 }
 
-/* 3. ปรับแต่ง Scrollbar ให้เหมือน VS Code (จุดนี้จะทำให้ UI ดูแพงขึ้นมาก) */
+/* ปรับแต่ง Scrollbar ให้ดูเท่แบบ VS Code */
 ::-webkit-scrollbar {
   width: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: #0f1115;
 }
 
 ::-webkit-scrollbar-thumb {
   background: #2d3748;
-  border-radius: 5px;
-  border: 2px solid #0f1115; /* ทำให้ดูเหมือนมีช่องว่างรอบๆ */
+  border: 2px solid #0f1115;
+  border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: #4a5568;
 }
 
-/* 4. Animation สำหรับจุดโหลด (ถ้าใน React ยังไม่ทำงาน) */
-@keyframes bounce {
-  0%, 100% { transform: translateY(-25%); animation-timing-function: cubic-bezier(0.8, 0, 1, 1); }
-  50% { transform: translateY(0); animation-timing-function: cubic-bezier(0, 0, 0.2, 1); }
-}
-
-.animate-bounce {
-  animation: bounce 1s infinite;
+#root {
+  height: 100vh;
 }
