@@ -55,25 +55,37 @@ async def scan_fix(payload: ScanFixRequest) -> ScanFixResponse:
             )
 
         # 2. LLM Fix (ทำเฉพาะเมื่อเจอช่องโหว่)
-        llm_start = time.perf_counter()
-        fixed_sanitized, explanation = await generate_fix(
-            sanitized.sanitized_code,
-            semgrep_results,
-            payload.user_instruction,
-        )
-        llm_ms = int((time.perf_counter() - llm_start) * 1000)
+        llm_ms = 0
+        fixed_code = payload.code_snippet
+        explanation = "Unable to generate fix: LLM service unavailable."
+        errors = []
 
-        # 3. Desanitize
-        fixed_code = desanitize_code(fixed_sanitized, sanitized.token_map)
+        try:
+            llm_start = time.perf_counter()
+            fixed_sanitized, explanation = await generate_fix(
+                sanitized.sanitized_code,
+                semgrep_results,
+                payload.user_instruction,
+            )
+            llm_ms = int((time.perf_counter() - llm_start) * 1000)
+
+            # 3. Desanitize
+            fixed_code = desanitize_code(fixed_sanitized, sanitized.token_map)
+        except Exception as llm_exc:
+            logger.warning(f"[{payload.request_id}] LLM failed: {str(llm_exc)}")
+            llm_ms = int((time.perf_counter() - llm_start) * 1000) if llm_start else 0
+            errors.append(
+                ServiceError(source="llm", code="LLM_UNAVAILABLE", detail=str(llm_exc))
+            )
 
         return ScanFixResponse(
             request_id=payload.request_id,
-            status="ok",
+            status="partial" if errors else "ok",
             findings=findings,
             fixed_code=fixed_code,
             explanation=explanation,
             timings_ms={"semgrep": semgrep_ms, "llm": llm_ms},
-            errors=[],
+            errors=errors,
         )
 
     except ValueError as exc:
@@ -82,6 +94,7 @@ async def scan_fix(payload: ScanFixRequest) -> ScanFixResponse:
             detail=ServiceError(source="validation", code="INVALID_INPUT", detail=str(exc)).model_dump(),
         ) from exc
     except Exception as exc:
+        logger.error(f"Unexpected error: {str(exc)}")
         raise HTTPException(
             status_code=500,
             detail=ServiceError(source="system", code="PROCESSING_FAILED", detail=str(exc)).model_dump(),
