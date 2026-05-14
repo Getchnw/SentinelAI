@@ -66,7 +66,7 @@ async function runScanForEditor(
 
   const result = await scanAndFix(editor.document, selected, {
     retries: 1,
-    timeoutMs: 30_000,
+    timeoutMs: 60_000,
   });
 
   updateDiagnostics(editor.document, result.findings, selectionRange.start.line);

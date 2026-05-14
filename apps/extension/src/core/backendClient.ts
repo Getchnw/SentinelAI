@@ -95,7 +95,7 @@ export async function scanAndFix(
     user_instruction: options.userInstruction,
   };
 
-  const timeoutMs = options.timeoutMs ?? 30_000;
+  const timeoutMs = options.timeoutMs ?? 60_000;
   const retries = options.retries ?? 1;
   const retryDelayMs = options.retryDelayMs ?? 500;
 

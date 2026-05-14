@@ -66,7 +66,7 @@ async def generate_fix(code: str, findings: list[dict[str, Any]], instruction: O
         )
         
         # ดึงข้อความตอบกลับออกมา
-        raw_response = response.choices[0].message.content.strip()
+        raw_response = response.choices[0].message.tool_calls[0].function.arguments
         
         # แปลง JSON String เป็น Dictionary
         parsed_response = json.loads(raw_response)
