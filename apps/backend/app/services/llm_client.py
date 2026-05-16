@@ -2,9 +2,14 @@ import os
 import json
 import re
 import logging
+import re
 from typing import Any, Optional, Tuple
+from dotenv import load_dotenv
 
-# นำเข้า litellm ซึ่งเป็นไลบรารีที่รวมการเชื่อมต่อกับหลายค่าย LLM ไว้ในที่เดียว
+# โหลด Environment Variables
+load_dotenv()
+
+# นำเข้า litellm
 import litellm
 from litellm import acompletion
 import httpx
@@ -13,20 +18,26 @@ import httpx
 logger = logging.getLogger(__name__)
 
 # ดึง Config จาก Environment Variables
-# ตัวอย่าง:
-# LLM_MODEL="ollama/llama3.1" (ใช้ Ollama)
-# LLM_MODEL="gpt-4o" (ใช้ OpenAI - ต้องมี OPENAI_API_KEY ใน .env)
-LLM_MODEL = os.getenv("LLM_MODEL", "ollama/llama3.1")
-print(f"Using LLM Model: {LLM_MODEL}")
+_base_model = os.getenv("LLM_MODEL", "ollama/qwen2.5-coder:7b")
 
-# ถ้าใช้ Ollama ต้องตั้งค่า API Base
-if LLM_MODEL.startswith("ollama/"):
-    os.environ["OLLAMA_API_BASE"] = os.getenv("OLLAMA_URL", "http://localhost:11434")
+# ตรวจสอบและเติม Provider Prefix ให้ถูกต้อง
+if "/" in _base_model:
+    LLM_MODEL = _base_model
+elif "gemini" in _base_model:
+    LLM_MODEL = f"google/{_base_model}"
+elif "gpt" in _base_model:
+    LLM_MODEL = f"openai/{_base_model}"
+elif "claude" in _base_model:
+    LLM_MODEL = f"anthropic/{_base_model}"
+else:
+    LLM_MODEL = f"ollama/{_base_model}"
+
+logger.info(f"Initialized with model: {LLM_MODEL}")
+print(f"Using LLM model: {LLM_MODEL}")
 
 # ปิดระบบ Logging ยิบย่อยของ litellm
 _debug_env = os.getenv("DEBUG", "False").lower()
 litellm.set_verbose = _debug_env in ("1", "true", "yes")
-
 
 def build_prompt(code: str, findings: list[dict[str, Any]], instruction: Optional[str]) -> str:
     """สร้าง Prompt ที่บังคับให้ AI ตอบกลับเป็น JSON"""
@@ -102,6 +113,7 @@ async def _generate_fix_with_ollama(prompt: str) -> Tuple[str, str]:
         return prompt, f"Error: Cannot connect to Ollama at '{ollama_base}'."
 
     raw_response = response_json.get("response", "")
+    print(f"Raw response from Ollama: {raw_response}")
     if not raw_response:
         logger.error("Ollama returned empty response payload: %s", response_json)
         return prompt, "Error: AI returned an empty response."
@@ -117,67 +129,54 @@ async def _generate_fix_with_ollama(prompt: str) -> Tuple[str, str]:
     return fixed_code, explanation
 
 async def generate_fix(code: str, findings: list[dict[str, Any]], instruction: Optional[str]) -> Tuple[str, str]:
-    """
-    ส่งข้อมูลไปให้ AI และรับผลลัพธ์กลับมา
-    Args:
-        code:        โค้ดต้นฉบับ
-        findings:    รายการช่องโหว่
-        instruction: คำสั่งพิเศษจากผู้ใช้ (optional)
-    """
+    """ส่งข้อมูลไปให้ AI และรับผลลัพธ์กลับมา"""
     prompt = build_prompt(code, findings, instruction)
-    
-    # รูปแบบ Message ตามมาตรฐาน OpenAI (LiteLLM ใช้โครงสร้างนี้เป็นหลัก)
-    messages = [
-        {"role": "user", "content": prompt}
-    ]
+    messages = [{"role": "user", "content": prompt}]
 
     if LLM_MODEL.startswith("ollama/"):
         return await _generate_fix_with_ollama(prompt)
 
     raw_response: str = ""
+    logger.info(f"Calling LLM model: {LLM_MODEL}")
+    
     try:
-        # ใช้ acompletion สำหรับ Async (ถ้าเป็น Sync ใช้ completion)
-        print("Message:", messages)
+        # แก้ไข Indentation และเรียก Ollama
         response = await acompletion(
             model=LLM_MODEL,
             messages=messages,
-            format="json", # บังคับให้ตอบเป็น JSON
-            temperature=0.2 # ลดความสร้างสรรค์ เน้นความถูกต้องของโค้ด
+            api_base=os.getenv("OLLAMA_URL", "http://localhost:11434"),
+            custom_llm_provider="ollama" if "ollama" in LLM_MODEL else None,
+            temperature=0.2,
+            format="json" # บังคับ JSON สำหรับ Ollama
         )
         
-        # ดึงข้อความตอบกลับออกมา
+        # ดึงข้อความตอบกลับ
         raw_response = response.choices[0].message.tool_calls[0].function.arguments
         
+        # --- ส่วนที่เพิ่ม: ล้าง Markdown Code Blocks (ป้องกัน JSON พัง) ---
+        clean_json = re.sub(r'^```json\s*|```$', '', raw_response, flags=re.MULTILINE).strip()
+        
         # แปลง JSON String เป็น Dictionary
-        parsed_response = json.loads(raw_response)
+        parsed_response = json.loads(clean_json)
         
         fixed_code = parsed_response.get("fixed_code") or code
         explanation = parsed_response.get("explanation") or "No explanation provided."
-
+        
+        logger.info("LLM fix generation succeeded")
         return fixed_code, explanation
 
-    # จัดการ Error ผ่าน LiteLLMExceptions ซึ่งรวม Error ของทุกค่ายมาให้แล้ว
-    except litellm.exceptions.Timeout:
-        logger.error("LLM request timed out (model=%s)", LLM_MODEL)
-        return code, "Error: AI engine timed out. Please try again."
+    except litellm.exceptions.Timeout as exc:
+        logger.error(f"LLM request timed out: {exc}")
+        raise RuntimeError("AI engine timed out. Please try again.") from exc
 
-    except litellm.exceptions.APIConnectionError:
-        logger.error("Cannot connect to LLM provider (model=%s)", LLM_MODEL)
-        return code, (
-            f"Error: Cannot connect to AI provider '{LLM_MODEL}'. "
-            "Please check your API URL or network connection."
-        )
+    except litellm.exceptions.APIConnectionError as exc:
+        logger.error(f"Cannot connect to Ollama: {exc}")
+        raise RuntimeError("Cannot connect to Ollama. Make sure the app is running.") from exc
 
-    except litellm.exceptions.AuthenticationError:
-        logger.error("Authentication failed for model=%s", LLM_MODEL)
-        return code, f"Error: Authentication failed for '{LLM_MODEL}'. Please check your API key."
+    except json.JSONDecodeError as exc:
+        logger.error(f"LLM returned non-JSON: {raw_response[:300]}")
+        raise RuntimeError("AI returned an invalid JSON format.") from exc
 
-    except json.JSONDecodeError:
-        # raw_response มี "" เป็น default แล้ว จึงปลอดภัยที่จะ log
-        logger.error("LLM returned non-JSON response: %.200s", raw_response)
-        return code, "Error: AI returned an unexpected format. Please try again."
-
-    except Exception:
-        # ใช้ logger.exception เพื่อให้ print stack trace อัตโนมัติ
-        logger.exception("Unexpected error in generate_fix (model=%s)", LLM_MODEL)
-        return code, "An unexpected error occurred in the AI Fix Engine."
+    except Exception as exc:
+        logger.exception(f"Unexpected error: {exc}")
+        raise RuntimeError(f"An unexpected error occurred: {exc}") from exc

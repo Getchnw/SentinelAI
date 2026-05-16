@@ -79,6 +79,22 @@ function updateWebviewData(response: ScanFixResponse): void {
   activePanel.webview.postMessage({ type: "SET_LOADING", loading: false });
 }
 
+function updateWebviewLoading(loading: boolean): void {
+  if (!activePanel) {
+    return;
+  }
+
+  activePanel.webview.postMessage({ type: "SET_LOADING", loading });
+}
+
+function updateWebviewMessage(message: string): void {
+  if (!activePanel) {
+    return;
+  }
+
+  activePanel.webview.postMessage({ type: "INFO", message });
+}
+
 export function showResultPanel(
   context: vscode.ExtensionContext,
   response: ScanFixResponse,
@@ -108,18 +124,34 @@ export function showResultPanel(
   activePanel.webview.html = createHtml(context, activePanel.webview, response);
 
   activePanel.webview.onDidReceiveMessage(async (message) => {
-    if (message?.type === "applyFix") {
-      await activeCallbacks.onApplyFix?.();
-      return;
-    }
+    try {
+      console.log("[SentinelAI] webview action received:", message?.type);
 
-    if (message?.type === "refresh") {
-      await activeCallbacks.onRefresh?.();
-      return;
-    }
+      if (message?.type === "applyFix") {
+        updateWebviewLoading(true);
+        await activeCallbacks.onApplyFix?.();
+        updateWebviewLoading(false);
+        updateWebviewMessage("Fix applied to the active editor.");
+        return;
+      }
 
-    if (message?.type === "fullScan") {
-      await activeCallbacks.onFullScan?.();
+      if (message?.type === "refresh") {
+        updateWebviewLoading(true);
+        await activeCallbacks.onRefresh?.();
+        updateWebviewLoading(false);
+        updateWebviewMessage("Refresh analysis completed.");
+        return;
+      }
+
+      if (message?.type === "fullScan") {
+        updateWebviewLoading(true);
+        await activeCallbacks.onFullScan?.();
+        updateWebviewLoading(false);
+        updateWebviewMessage("Full scan completed.");
+      }
+    } catch (error) {
+      updateWebviewLoading(false);
+      updateWebviewMessage(`Action failed: ${String(error)}`);
     }
   });
 

@@ -31,7 +31,6 @@ def find_semgrep_executable() -> str:
 
     raise RuntimeError("Semgrep executable not found. Please add it to PATH.")
 
-
 def run_semgrep(code: str, language: str, timeout_seconds: int = 60) -> list[dict]:
     suffix_map = {
         "python": ".py", "py": ".py",
@@ -94,5 +93,5 @@ def run_semgrep(code: str, language: str, timeout_seconds: int = 60) -> list[dic
         return payload.get("results", [])
 
 
-async def run_semgrep_async(code: str, language: str, timeout_seconds: int = 20):
+async def run_semgrep_async(code: str, language: str, timeout_seconds: int = 120):
     return await asyncio.to_thread(run_semgrep, code, language, timeout_seconds)

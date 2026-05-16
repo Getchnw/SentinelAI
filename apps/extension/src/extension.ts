@@ -13,12 +13,16 @@ import {
 } from "./providers/codeActionProvider";
 import { showResultPanel } from "./webview/panel";
 
+type ScanMode = "selection" | "full";
+
 async function runScanForEditor(
   context: vscode.ExtensionContext,
   editor: vscode.TextEditor,
-  selectionRange: vscode.Range
+  selectionRange: vscode.Range,
+  mode: ScanMode = "selection"
 ): Promise<void> {
   const selected = editor.document.getText(selectionRange);
+  const isFullScan = mode === "full";
 
   const loadingResponse = {
     request_id: "",
@@ -26,7 +30,9 @@ async function runScanForEditor(
     findings: [],
     original_code: "",
     fixed_code: "",
-    explanation: "Scanning...",
+    explanation: isFullScan
+      ? "Running full-file scan..."
+      : "Refreshing current selection analysis...",
     timings_ms: {},
     errors: [],
   };
@@ -36,38 +42,22 @@ async function runScanForEditor(
       vscode.window.showWarningMessage("Waiting for scan results...");
     },
     onRefresh: async () => {
-      const refreshedEditor = vscode.window.activeTextEditor;
-      if (!refreshedEditor) {
-        return;
-      }
-
-      const refreshedSelection = refreshedEditor.selection.isEmpty
-        ? new vscode.Range(
-            new vscode.Position(0, 0),
-            refreshedEditor.document.lineAt(refreshedEditor.document.lineCount - 1).range.end
-          )
-        : new vscode.Range(refreshedEditor.selection.start, refreshedEditor.selection.end);
-
-      await runScanForEditor(context, refreshedEditor, refreshedSelection);
+      await runScanForEditor(context, editor, selectionRange, "selection");
     },
     onFullScan: async () => {
-      const refreshedEditor = vscode.window.activeTextEditor;
-      if (!refreshedEditor) {
-        return;
-      }
-
+      const refreshedEditor = editor;
       const fullRange = new vscode.Range(
         new vscode.Position(0, 0),
         refreshedEditor.document.lineAt(refreshedEditor.document.lineCount - 1).range.end
       );
 
-      await runScanForEditor(context, refreshedEditor, fullRange);
+      await runScanForEditor(context, refreshedEditor, fullRange, "full");
     },
   });
 
   const result = await scanAndFix(editor.document, selected, {
-    retries: 1,
-    timeoutMs: 60_000,
+    retries: isFullScan ? 2 : 1,
+    timeoutMs: isFullScan ? 240_000 : 120_000,
   });
 
   updateDiagnostics(editor.document, result.findings, selectionRange.start.line);
@@ -82,36 +72,22 @@ async function runScanForEditor(
       }
     },
     onRefresh: async () => {
-      const refreshedEditor = vscode.window.activeTextEditor;
-      if (!refreshedEditor) {
-        return;
-      }
-
-      const refreshedSelection = refreshedEditor.selection.isEmpty
-        ? new vscode.Range(
-            new vscode.Position(0, 0),
-            refreshedEditor.document.lineAt(refreshedEditor.document.lineCount - 1).range.end
-          )
-        : new vscode.Range(refreshedEditor.selection.start, refreshedEditor.selection.end);
-
-      await runScanForEditor(context, refreshedEditor, refreshedSelection);
+      await runScanForEditor(context, editor, selectionRange, "selection");
     },
     onFullScan: async () => {
-      const refreshedEditor = vscode.window.activeTextEditor;
-      if (!refreshedEditor) {
-        return;
-      }
-
+      const refreshedEditor = editor;
       const fullRange = new vscode.Range(
         new vscode.Position(0, 0),
         refreshedEditor.document.lineAt(refreshedEditor.document.lineCount - 1).range.end
       );
 
-      await runScanForEditor(context, refreshedEditor, fullRange);
+      await runScanForEditor(context, refreshedEditor, fullRange, "full");
     },
   });
 
-  vscode.window.showInformationMessage("SentinelAI scan complete.");
+  vscode.window.showInformationMessage(
+    isFullScan ? "SentinelAI full-file scan complete." : "SentinelAI refresh complete for selected range."
+  );
 }
 
 export function activate(context: vscode.ExtensionContext): void {

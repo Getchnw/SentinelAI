@@ -28,6 +28,7 @@ type ScanFixResponse = {
 type WebviewMessage =
   | { type: "SET_DATA"; data: ScanFixResponse }
   | { type: "SET_LOADING"; loading: boolean }
+  | { type: "INFO"; message: string }
   | { type: "ERROR"; message: string };
 
 type ExtensionMessage =
@@ -185,6 +186,12 @@ export function ChatPanel() {
       if (payload?.type === "ERROR") {
         setMessage(payload.message);
         setLoading(false);
+        return;
+      }
+
+      if (payload?.type === "INFO") {
+        setMessage(payload.message);
+        setLoading(false);
       }
     };
 
@@ -193,14 +200,26 @@ export function ChatPanel() {
   }, []);
 
   const requestAction = (type: ExtensionMessage["type"]) => {
+    console.log("requestAction called", type);
+
     if (!vscode) {
-      setMessage("VS Code API is not available in this environment.");
+      const msg = "VS Code API is not available in this environment.";
+      console.warn(msg);
+      setMessage(msg);
       return;
     }
 
-    setLoading(true);
-    setMessage(null);
-    vscode.postMessage({ type });
+    try {
+      setLoading(true);
+      setMessage(null);
+      // safe postMessage with try/catch so errors surface in the UI
+      vscode.postMessage({ type });
+      console.log("postMessage sent", type);
+    } catch (err) {
+      console.error("postMessage failed", err);
+      setLoading(false);
+      setMessage(`Failed to send action to extension: ${String(err)}`);
+    }
   };
 
   const copyFix = async () => {
@@ -280,10 +299,10 @@ export function ChatPanel() {
               >
                 <div
                   className={`absolute left-0 top-0 bottom-0 w-1.5 rounded-l-xl ${finding.severity === "error"
-                      ? "bg-red-500"
-                      : finding.severity === "warning"
-                        ? "bg-amber-400"
-                        : "bg-sky-400"
+                    ? "bg-red-500"
+                    : finding.severity === "warning"
+                      ? "bg-amber-400"
+                      : "bg-sky-400"
                     }`}
                 />
 
@@ -321,52 +340,52 @@ export function ChatPanel() {
                 </span>
               </div>
               {/* ปุ่ม Copy โค้ดแบบไอคอน */}
-              <button
-                className="p-1.5 hover:bg-slate-700 rounded-md transition-colors text-slate-400 hover:text-white"
-                title="Copy code"
-                onClick={copyFix}
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                  />
-                </svg>
-              </button>
-            </div>
-            <div className="border-b border-[#30363d] bg-[#0b0f14] px-4 py-2">
-              <div className="flex items-center justify-between gap-3 text-[10px] uppercase tracking-[0.2em] text-slate-400">
-                <span>Before / After Diff</span>
-                <span className="text-slate-500">Git-style preview</span>
-              </div>
+              {loading ? (
+                <p className="text-[8px] text-gray-500">Generating fix...</p>
+              ) : (
+                data.fixed_code && (
+                  <div className="flex items-center gap-2">
+                    <p className="text-[8px] text-gray-500">Ready to apply</p>
+                    <button
+                      className="p-1.5 hover:bg-slate-700 rounded-md transition-colors text-slate-400 hover:text-white"
+                      title="Copy code"
+                      onClick={copyFix}
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="2"
+                          d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                ))
+              }
             </div>
             <div className="overflow-x-auto font-mono text-[11px]">
               {data.original_code && data.fixed_code ? (
-                <div className="min-w-[900px]">
-                  <div className="grid grid-cols-2 border-b border-[#30363d] text-[10px] uppercase tracking-widest text-slate-500">
-                    <div className="px-4 py-2 border-r border-[#30363d]">Before</div>
-                    <div className="px-4 py-2">After</div>
-                  </div>
-                  <div className="divide-y divide-[#30363d]">
-                    {diffLines.map((line, index) => (
-                      <div key={`${line.leftNumber ?? "x"}-${line.rightNumber ?? "y"}-${index}`} className="grid grid-cols-2">
-                        <div className={`flex border-r border-[#30363d] ${diffLineClass(line.kind, "left")}`}>
-                          <div className={`w-12 shrink-0 px-3 py-1.5 text-right text-[10px] border-r border-[#30363d] ${lineBadgeClass(line.kind)}`}>
-                            {renderLineNumber(line.leftNumber)}
+                <div className="space-y-2 p-4 bg-[#000]">
+                  {diffLines
+                    .filter((line) => line.kind !== "equal")
+                    .map((line, index) => (
+                      <div
+                        className="space-y-1"
+                        key={`${line.leftNumber ?? "x"}-${line.rightNumber ?? "y"}-${index}`}
+                      >
+                        {line.leftText && (
+                          <div className="text-red-400 opacity-50">
+                            - {line.leftText}
                           </div>
-                          <pre className="flex-1 px-3 py-1.5 whitespace-pre-wrap break-words">{line.leftText || " "}</pre>
-                        </div>
-                        <div className={`flex ${diffLineClass(line.kind, "right")}`}>
-                          <div className={`w-12 shrink-0 px-3 py-1.5 text-right text-[10px] border-r border-[#30363d] ${lineBadgeClass(line.kind)}`}>
-                            {renderLineNumber(line.rightNumber)}
+                        )}
+                        {line.rightText && (
+                          <div className="text-green-400">
+                            + {line.rightText}
                           </div>
-                          <pre className="flex-1 px-3 py-1.5 whitespace-pre-wrap break-words">{line.rightText || " "}</pre>
-                        </div>
+                        )}
                       </div>
                     ))}
-                  </div>
                 </div>
               ) : (
                 <div className="bg-black/40 p-4 space-y-1 text-slate-200">
@@ -433,7 +452,7 @@ export function ChatPanel() {
                   AI ENGINE ANALYZING
                 </p>
                 <p className="text-gray-600 text-[9px]">
-                  Deep Scanning for OWASP Vulnerabilities...
+                  Scanning for OWASP Vulnerabilities...
                 </p>
               </div>
             </div>
