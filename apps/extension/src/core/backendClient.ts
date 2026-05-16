@@ -18,6 +18,7 @@ export type ScanFixResponse = {
   request_id: string;
   status: string;
   findings: Finding[];
+  original_code: string;
   fixed_code: string;
   explanation: string;
   timings_ms: Record<string, number>;

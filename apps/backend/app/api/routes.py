@@ -48,6 +48,7 @@ async def scan_fix(payload: ScanFixRequest) -> ScanFixResponse:
                 request_id=payload.request_id,
                 status="ok",
                 findings=[],
+                original_code=payload.code_snippet,
                 fixed_code=payload.code_snippet, # คืนโค้ดต้นฉบับกลับไปเลย
                 explanation="No vulnerabilities detected. Your code looks secure!",
                 timings_ms={"semgrep": semgrep_ms, "llm": 0},
@@ -82,6 +83,7 @@ async def scan_fix(payload: ScanFixRequest) -> ScanFixResponse:
             request_id=payload.request_id,
             status="partial" if errors else "ok",
             findings=findings,
+            original_code=payload.code_snippet,
             fixed_code=fixed_code,
             explanation=explanation,
             timings_ms={"semgrep": semgrep_ms, "llm": llm_ms},

@@ -24,6 +24,7 @@ async function runScanForEditor(
     request_id: "",
     status: "idle",
     findings: [],
+    original_code: "",
     fixed_code: "",
     explanation: "Scanning...",
     timings_ms: {},

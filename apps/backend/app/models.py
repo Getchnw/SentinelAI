@@ -28,6 +28,7 @@ class ScanFixResponse(BaseModel):
     request_id: str
     status: str
     findings: List[Finding]
+    original_code: str
     fixed_code: str
     explanation: str
     timings_ms: dict

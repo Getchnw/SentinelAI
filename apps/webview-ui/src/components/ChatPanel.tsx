@@ -18,6 +18,7 @@ type ScanFixResponse = {
   request_id: string;
   status: string;
   findings: Finding[];
+  original_code: string;
   fixed_code: string;
   explanation: string;
   timings_ms: Record<string, number>;
@@ -47,6 +48,7 @@ const emptyResponse: ScanFixResponse = {
   request_id: "",
   status: "idle",
   findings: [],
+  original_code: "",
   fixed_code: "",
   explanation: "Run a scan to inspect findings and suggested fixes.",
   timings_ms: {},
@@ -71,6 +73,81 @@ function formatTimingEntries(timings: Record<string, number>): string {
   }
 
   return entries.map(([name, value]) => `${name}: ${value} ms`).join(" • ");
+}
+
+type DiffLine = {
+  leftNumber: number | null;
+  rightNumber: number | null;
+  leftText: string;
+  rightText: string;
+  kind: "equal" | "remove" | "add" | "change";
+};
+
+function splitLines(code: string): string[] {
+  return code.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+}
+
+function buildDiffLines(before: string, after: string): DiffLine[] {
+  const left = splitLines(before);
+  const right = splitLines(after);
+  const maxLength = Math.max(left.length, right.length);
+  const result: DiffLine[] = [];
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const leftText = left[index] ?? "";
+    const rightText = right[index] ?? "";
+
+    if (leftText === rightText) {
+      result.push({
+        leftNumber: index < left.length ? index + 1 : null,
+        rightNumber: index < right.length ? index + 1 : null,
+        leftText,
+        rightText,
+        kind: "equal",
+      });
+      continue;
+    }
+
+    result.push({
+      leftNumber: index < left.length ? index + 1 : null,
+      rightNumber: index < right.length ? index + 1 : null,
+      leftText,
+      rightText,
+      kind: leftText && rightText ? "change" : leftText ? "remove" : "add",
+    });
+  }
+
+  return result;
+}
+
+function lineBadgeClass(kind: DiffLine["kind"]): string {
+  switch (kind) {
+    case "remove":
+      return "bg-red-500/15 text-red-300 border-red-500/20";
+    case "add":
+      return "bg-emerald-500/15 text-emerald-300 border-emerald-500/20";
+    case "change":
+      return "bg-amber-500/15 text-amber-300 border-amber-500/20";
+    default:
+      return "bg-slate-500/15 text-slate-300 border-slate-500/20";
+  }
+}
+
+function diffLineClass(kind: DiffLine["kind"], side: "left" | "right"): string {
+  if (kind === "remove" && side === "left") {
+    return "bg-red-500/10 text-red-100";
+  }
+  if (kind === "add" && side === "right") {
+    return "bg-emerald-500/10 text-emerald-100";
+  }
+  if (kind === "change") {
+    return side === "left" ? "bg-red-500/10 text-red-100" : "bg-emerald-500/10 text-emerald-100";
+  }
+  return "bg-[#0b0f14] text-slate-200";
+}
+
+function renderLineNumber(value: number | null): string {
+  return value === null ? "" : String(value);
 }
 
 export function ChatPanel() {
@@ -137,6 +214,10 @@ export function ChatPanel() {
 
   const findings = data.findings ?? [];
   const errors = data.errors ?? [];
+  const diffLines = useMemo(
+    () => buildDiffLines(data.original_code ?? "", data.fixed_code ?? ""),
+    [data.original_code, data.fixed_code]
+  );
   const requestTitle = data.request_id ? `Request ${data.request_id}` : "No active request";
 
   return (
@@ -255,14 +336,47 @@ export function ChatPanel() {
                 </svg>
               </button>
             </div>
-            <div className="p-0 font-mono text-[11px]">
-              <div className="bg-black/40 p-4 space-y-1 text-slate-200">
-                {data.fixed_code ? (
-                  <pre className="whitespace-pre-wrap overflow-x-auto">{data.fixed_code}</pre>
-                ) : (
-                  <span>// Run a scan to generate a suggested patch.</span>
-                )}
+            <div className="border-b border-[#30363d] bg-[#0b0f14] px-4 py-2">
+              <div className="flex items-center justify-between gap-3 text-[10px] uppercase tracking-[0.2em] text-slate-400">
+                <span>Before / After Diff</span>
+                <span className="text-slate-500">Git-style preview</span>
               </div>
+            </div>
+            <div className="overflow-x-auto font-mono text-[11px]">
+              {data.original_code && data.fixed_code ? (
+                <div className="min-w-[900px]">
+                  <div className="grid grid-cols-2 border-b border-[#30363d] text-[10px] uppercase tracking-widest text-slate-500">
+                    <div className="px-4 py-2 border-r border-[#30363d]">Before</div>
+                    <div className="px-4 py-2">After</div>
+                  </div>
+                  <div className="divide-y divide-[#30363d]">
+                    {diffLines.map((line, index) => (
+                      <div key={`${line.leftNumber ?? "x"}-${line.rightNumber ?? "y"}-${index}`} className="grid grid-cols-2">
+                        <div className={`flex border-r border-[#30363d] ${diffLineClass(line.kind, "left")}`}>
+                          <div className={`w-12 shrink-0 px-3 py-1.5 text-right text-[10px] border-r border-[#30363d] ${lineBadgeClass(line.kind)}`}>
+                            {renderLineNumber(line.leftNumber)}
+                          </div>
+                          <pre className="flex-1 px-3 py-1.5 whitespace-pre-wrap break-words">{line.leftText || " "}</pre>
+                        </div>
+                        <div className={`flex ${diffLineClass(line.kind, "right")}`}>
+                          <div className={`w-12 shrink-0 px-3 py-1.5 text-right text-[10px] border-r border-[#30363d] ${lineBadgeClass(line.kind)}`}>
+                            {renderLineNumber(line.rightNumber)}
+                          </div>
+                          <pre className="flex-1 px-3 py-1.5 whitespace-pre-wrap break-words">{line.rightText || " "}</pre>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-black/40 p-4 space-y-1 text-slate-200">
+                  {data.fixed_code ? (
+                    <pre className="whitespace-pre-wrap overflow-x-auto">{data.fixed_code}</pre>
+                  ) : (
+                    <span>// Run a scan to generate a suggested patch.</span>
+                  )}
+                </div>
+              )}
             </div>
             <div className="p-3 bg-[#1c2128]/50 border-t border-[#30363d] flex justify-end px-4">
               <button
