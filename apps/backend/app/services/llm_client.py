@@ -144,54 +144,13 @@ async def generate_fix(code: str, findings: list[dict[str, Any]], instruction: O
             format="json", # บังคับให้ตอบเป็น JSON
             temperature=0.2 # ลดความสร้างสรรค์ เน้นความถูกต้องของโค้ด
         )
-        print(f"Raw LLM response: {response}")
-
-        # ดึงข้อความตอบกลับออกมาอย่างปลอดภัย — บาง provider อาจส่งโครงสร้างต่างกัน
-        raw_response = ""
-        try:
-            choice = None
-            # response.choices may be a list-like or attribute container
-            if hasattr(response, "choices") and len(response.choices) > 0:
-                choice = response.choices[0]
-            elif isinstance(response, (list, tuple)) and len(response) > 0:
-                choice = response[0]
-
-            content = None
-            if choice is not None:
-                # choice.message may be an object or a dict
-                msg = None
-                if isinstance(choice, dict):
-                    msg = choice.get("message")
-                else:
-                    msg = getattr(choice, "message", None)
-
-                if msg is not None:
-                    if isinstance(msg, dict):
-                        content = msg.get("content")
-                    else:
-                        content = getattr(msg, "content", None)
-
-                # fallbacks: some responses put text directly on choice
-                if content is None:
-                    if isinstance(choice, dict):
-                        content = choice.get("text") or choice.get("delta")
-                    else:
-                        content = getattr(choice, "text", None) or getattr(choice, "delta", None)
-
-            if content is None:
-                # Fallback: stringify whole response
-                try:
-                    raw_response = json.dumps(response, default=str)
-                except Exception:
-                    raw_response = str(response)
-            else:
-                raw_response = content.strip() if isinstance(content, str) else str(content)
-        except Exception:
-            # If anything unexpected happens while parsing, fall back to string form
-            raw_response = str(response)
-
-        parsed_response = _extract_json_payload(raw_response)
-
+        
+        # ดึงข้อความตอบกลับออกมา
+        raw_response = response.choices[0].message.tool_calls[0].function.arguments
+        
+        # แปลง JSON String เป็น Dictionary
+        parsed_response = json.loads(raw_response)
+        
         fixed_code = parsed_response.get("fixed_code") or code
         explanation = parsed_response.get("explanation") or "No explanation provided."
 
