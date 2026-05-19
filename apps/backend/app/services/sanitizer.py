@@ -4,8 +4,10 @@ import logging
 import tempfile
 from dataclasses import dataclass, field
 
+import re
 from detect_secrets import SecretsCollection
 from detect_secrets.settings import default_settings
+# from detect_secrets.settings import transient_settings
 
 logger = logging.getLogger(__name__)
 
@@ -37,60 +39,81 @@ def _make_token(secret_value: str) -> str:
     short_hash = hashlib.sha256(secret_value.encode()).hexdigest()[:8]
     return f"{_TOKEN_PREFIX}{short_hash}{_TOKEN_SUFFIX}"
 
-
 def sanitize_code(code: str) -> SanitizationResult:
     """
-    สแกนโค้ดหาข้อมูลลับด้วย detect-secrets แล้วแทนที่ด้วย token
-    Returns:
-        SanitizationResult ที่มี:
-          - sanitized_code: โค้ดที่ค่าลับถูกแทนที่ด้วย token แล้ว
-          - token_map: mapping จาก token → ค่าลับจริง (สำหรับ desanitize ทีหลัง)
+    สแกนโค้ดหาข้อมูลลับด้วย Regex ยอดนิยม และ detect-secrets 
+    แล้วแทนที่ด้วย token อย่างถูกต้อง ปลอดภัยจาก AttributeError
     """
-    # ถ้า code ว่างเปล่า ไม่ต้องทำอะไรเลย
     if not code.strip():
         return SanitizationResult(sanitized_code=code)
 
     token_map: dict[str, str] = {}
-    secrets = SecretsCollection()
+    
+    # =========================================================================
+    # ขั้นตอนที่ 1: ตรวจจับด้วย Regex (Pattern Matching) - ป้องกันพิกัดไฟล์พังบน Windows
+    # =========================================================================
+    regex_patterns = {
+        "AWS Access Key": r"AKIA[A-Z0-9]{16}",
+        "AWS Secret Key": r"[a-zA-Z0-9/+=]{36,40}",
+        "Slack Token": r"xox[bpa]-[0-9]{12}-[0-9]{12}-[a-zA-Z0-9]{24}",
+        "GitHub Token": r"ghp_[a-zA-Z0-9]{36}|github_pat_[a-zA-Z0-9]{82}",
+        "OpenAI Token": r"sk-proj-[a-zA-Z0-9]{40,50}",
+        "Stripe Token": r"sk_live_[a-zA-Z0-9]{24,50}"
+    }
 
-# 1. สร้างไฟล์ชั่วคราว (Temporary File) ขึ้นมาจริงๆ เพื่อให้ detect-secrets อ่าน
-    # delete=False เพราะเราจะให้มันเขียนเสร็จก่อน แล้วค่อยให้เราลบเองทีหลัง
-    with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".py", encoding="utf-8") as tmp_file:
-        tmp_file.write(code)
+    current_sanitized_code = code
+
+    for name, pattern in regex_patterns.items():
+        matches = re.findall(pattern, current_sanitized_code)
+        for secret_value in matches:
+            if secret_value and secret_value not in token_map.values():
+                if not secret_value.startswith(_TOKEN_PREFIX):
+                    token = _make_token(secret_value)
+                    token_map[token] = secret_value
+                    current_sanitized_code = current_sanitized_code.replace(secret_value, token)
+
+    # =========================================================================
+    # ขั้นตอนที่ 2: ใช้ detect-secrets สแกนซ้ำ (Fallback เผื่อเจอ High Entropy ตัวอื่น)
+    # =========================================================================
+    secrets = SecretsCollection()
+    
+    # สร้างไฟล์ชั่วคราวในโฟลเดอร์โปรเจกต์ปัจจุบันเพื่อเลี่ยง Folder Filter ของ Windows
+    with tempfile.NamedTemporaryFile(dir=".", mode="w+", delete=False, suffix=".py", encoding="utf-8") as tmp_file:
+        tmp_file.write(current_sanitized_code)
         tmp_file_path = tmp_file.name
 
     try:
-        # 2. ใช้ scan_file และชี้ไปที่ไฟล์ชั่วคราวที่เราเพิ่งสร้าง
         with default_settings():
             secrets.scan_file(tmp_file_path)
 
-        lines = code.split("\n")
+        if tmp_file_path in secrets and secrets[tmp_file_path]:
+            for secret in secrets[tmp_file_path]:
+                secret_value = secret.secret_value
+                
+                if secret_value and secret_value not in token_map.values():
+                    if not secret_value.startswith(_TOKEN_PREFIX):
+                        token = _make_token(secret_value)
+                        token_map[token] = secret_value
+                        current_sanitized_code = current_sanitized_code.replace(secret_value, token)
 
-        if tmp_file_path not in secrets:
-            logger.debug("No secrets found in scanned code.")
-            return SanitizationResult(sanitized_code=code)
-
-        for secret in secrets[tmp_file_path]:
-            line_idx = secret.line_number - 1
-            secret_value = secret.secret_value
-
-            if not (0 <= line_idx < len(lines) and secret_value):
-                continue
-
-            token = _make_token(secret_value)
-            if token not in token_map:
-                token_map[token] = secret_value
-
-            lines[line_idx] = lines[line_idx].replace(secret_value, token)
-
-        sanitized_code = "\n".join(lines)
-        return SanitizationResult(sanitized_code=sanitized_code, token_map=token_map)
-
+    except Exception as exc:
+        logger.error(f"detect-secrets scanner error: {exc}")
     finally:
-        # 3. Clean up: ไม่ว่าจะเกิด Error กลางทางหรือไม่ ต้องลบไฟล์ชั่วคราวทิ้งเสมอ!
         if os.path.exists(tmp_file_path):
-            os.remove(tmp_file_path)
+            try:
+                os.remove(tmp_file_path)
+            except Exception:
+                pass
 
+    # =========================================================================
+    # ขั้นตอนที่ 3: ส่งข้อมูลกลับเป็นคลาส SanitizationResult 100% เสมอ
+    # =========================================================================
+    print(f"--- [DEBUG MASKING RESULT] ---")
+    print(f"Sanitized code:\n{current_sanitized_code}")
+    print(f"Token map: {token_map}")
+    print(f"------------------------------")
+    
+    return SanitizationResult(sanitized_code=current_sanitized_code, token_map=token_map)
 
 def desanitize_code(code: str, token_map: dict[str, str]) -> str:
     """

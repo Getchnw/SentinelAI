@@ -128,6 +128,8 @@ async def scan_fix(payload: ScanFixRequest) -> ScanFixResponse:
         # ===== ขั้นตอนที่ 2: Sanitize โค้ด =====
         try:
             sanitized = sanitize_code(payload.code_snippet)
+            # sanitized = scan_with_regex(payload.code_snippet)
+            print(f"Sanitized code:\n{sanitized.sanitized_code}\nToken map: {sanitized.token_map}")
             logger.debug(f"[{payload.request_id}] Code sanitized. Secrets masked: {len(sanitized.token_map)}")
         except Exception as exc:
             logger.error(f"[{payload.request_id}] Sanitization failed: {exc}", exc_info=True)
@@ -229,16 +231,16 @@ async def scan_fix(payload: ScanFixRequest) -> ScanFixResponse:
         # ===== ขั้นตอนที่ 5: หากไม่พบช่องโหว่ ส่งผลลัพธ์กลับทันที =====
         if not findings:
             logger.info(f"[{payload.request_id}] No vulnerabilities found. Skipping LLM.")
-            return ScanFixResponse(
-                request_id=payload.request_id,
-                status="ok",
-                findings=[],
-                original_code=payload.code_snippet,
-                fixed_code=payload.code_snippet,
-                explanation="✓ No vulnerabilities detected. Your code looks secure!",
-                timings_ms={"semgrep": semgrep_ms, "llm": 0},
-                errors=errors,
-            )
+            # return ScanFixResponse(
+            #     request_id=payload.request_id,
+            #     status="ok",
+            #     findings=[],
+            #     original_code=payload.code_snippet,
+            #     fixed_code=payload.code_snippet,
+            #     explanation="✓ No vulnerabilities detected. Your code looks secure!",
+            #     timings_ms={"semgrep": semgrep_ms, "llm": 0},
+            #     errors=errors,
+            # )
 
         # ===== ขั้นตอนที่ 6: เรียก LLM เพื่อสร้างการแก้ไข =====
         llm_ms = 0
