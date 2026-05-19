@@ -4,10 +4,15 @@ const sqlite3 = require("sqlite3").verbose();
 const app = express();
 const db = new sqlite3.Database(":memory:");
 
+db.serialize(() => {
+  db.run("CREATE TABLE users (id INT, username TEXT)");
+  db.run("INSERT INTO users VALUES (1, 'admin'), (2, 'user')");
+});
+
 app.get("/users", (req, res) => {
   const username = req.query.username;
 
-  // Vulnerable: SQL injection via string concatenation.
+  // Vulnerable: SQL injection via string concatenation
   const query = "SELECT * FROM users WHERE username = '" + username + "'";
 
   db.all(query, [], (err, rows) => {
@@ -19,5 +24,5 @@ app.get("/users", (req, res) => {
 });
 
 app.listen(3001, () => {
-  console.log("Server running on 3001");
+  console.log("Server is listening on port 3001");
 });
