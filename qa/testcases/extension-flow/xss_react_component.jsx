@@ -1,10 +1,10 @@
-import React from "react";
+import React from 'react';
 
 export default function ProfileCard({ bioHtml }) {
   return (
-    <div>
-      <h2>User Bio</h2>
-      {/* Vulnerable: unsanitized HTML can trigger XSS. */}
+    <div className="profile-card">
+      <h2>User Profile</h2>
+      {/* Vulnerable: DOM-based XSS by rendering unsanitized HTML */}
       <div dangerouslySetInnerHTML={{ __html: bioHtml }} />
     </div>
   );
